@@ -464,7 +464,11 @@ export function CharadesGame() {
                   ? "LAIKAS BAIGĖSI"
                   : "PRALEISTA"}
             </p>
-            <h1>{state.lastResult.wordText}</h1>
+            <h1>
+              {state.lastResult.result === "guessed"
+                ? "Puiku!"
+                : state.lastResult.wordText}
+            </h1>
             <p className="score-earned">
               +{formatScore(state.lastResult.scoreAwarded)} <span>tšk.</span>
             </p>
