@@ -73,9 +73,9 @@ export type GameAction =
   | { type: "REVEAL_WORD"; now: number }
   | { type: "MARK_GUESSED"; now: number }
   | { type: "SELECT_GUESSER"; guesserId: string; now: number }
-  | { type: "PASS"; now: number }
+  | { type: "PASS"; now: number; word: WordCard }
   | { type: "TIMEOUT"; now: number }
-  | { type: "CONTINUE"; word: WordCard }
+  | { type: "CONTINUE"; now: number; word: WordCard }
   | { type: "TOGGLE_SCOREBOARD"; open?: boolean }
   | { type: "END_GAME" }
   | { type: "REMATCH"; now: number; word: WordCard }
@@ -272,16 +272,33 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           : state.turnStartedAt + (state.pendingDurationMs ?? 0);
       return finishAttempt(state, "guessed", action.guesserId, effectiveNow);
     }
-    case "PASS":
-      return state.phase === "acting"
-        ? finishAttempt(state, "passed", null, action.now)
-        : state;
+    case "PASS": {
+      if (state.phase !== "acting") return state;
+      const finished = finishAttempt(state, "passed", null, action.now);
+      return {
+        ...finished,
+        phase: "acting",
+        currentWord: action.word,
+        turnStartedAt: action.now,
+        lastResult: null,
+      };
+    }
     case "TIMEOUT":
       return state.phase === "acting"
         ? finishAttempt(state, "timeout", null, action.now)
         : state;
     case "CONTINUE":
       if (state.phase !== "result" || !state.lastResult) return state;
+      if (state.lastResult.result !== "guessed") {
+        return {
+          ...state,
+          phase: "acting",
+          currentWord: action.word,
+          turnStartedAt: action.now,
+          pendingDurationMs: null,
+          lastResult: null,
+        };
+      }
       return {
         ...state,
         phase: "handoff",

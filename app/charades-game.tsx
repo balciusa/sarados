@@ -2,9 +2,11 @@
 
 import {
   type FormEvent,
+  useCallback,
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
 } from "react";
 import {
@@ -59,6 +61,11 @@ export function CharadesGame() {
   const [name, setName] = useState("");
   const [validation, setValidation] = useState("");
   const [clockNow, setClockNow] = useState(0);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const activeSoundsRef = useRef(new Map<OscillatorNode, GainNode>());
+  const firedCueSecondsRef = useRef(new Set<number>());
+  const soundEnabledRef = useRef(true);
 
   const currentActor = state.players.find(
     (player) => player.id === state.currentActorId,
@@ -75,19 +82,116 @@ export function CharadesGame() {
     [state.players, state.scores],
   );
 
+  const stopCountdownAudio = useCallback(() => {
+    activeSoundsRef.current.forEach((gain, sound) => {
+      sound.onended = null;
+      try {
+        sound.stop();
+      } catch {
+        // The sound may already have stopped naturally.
+      }
+      sound.disconnect();
+      gain.disconnect();
+    });
+    activeSoundsRef.current.clear();
+  }, []);
+
+  const unlockCountdownAudio = useCallback(() => {
+    try {
+      const AudioContextConstructor =
+        window.AudioContext ??
+        (
+          window as typeof window & {
+            webkitAudioContext?: typeof AudioContext;
+          }
+        ).webkitAudioContext;
+      if (!AudioContextConstructor) return null;
+
+      if (
+        audioContextRef.current === null ||
+        audioContextRef.current.state === "closed"
+      ) {
+        audioContextRef.current = new AudioContextConstructor();
+      }
+      if (audioContextRef.current.state === "suspended") {
+        void audioContextRef.current.resume().catch(() => undefined);
+      }
+      return audioContextRef.current;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const playCountdownCue = useCallback((remainingSeconds: number) => {
+    if (!soundEnabledRef.current) return;
+    const context = audioContextRef.current;
+    if (!context || context.state !== "running") return;
+
+    const sound = context.createOscillator();
+    const gain = context.createGain();
+    const startsAt = context.currentTime;
+    const isFinalWarning = remainingSeconds === 1;
+    const duration = isFinalWarning ? 0.24 : 0.045;
+
+    sound.type = isFinalWarning ? "sine" : "square";
+    sound.frequency.setValueAtTime(isFinalWarning ? 1320 : 820, startsAt);
+    if (!isFinalWarning) {
+      sound.frequency.exponentialRampToValueAtTime(610, startsAt + duration);
+    }
+    gain.gain.setValueAtTime(isFinalWarning ? 0.11 : 0.045, startsAt);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startsAt + duration);
+    sound.connect(gain);
+    gain.connect(context.destination);
+    activeSoundsRef.current.set(sound, gain);
+    sound.onended = () => {
+      activeSoundsRef.current.delete(sound);
+      sound.disconnect();
+      gain.disconnect();
+    };
+    sound.start(startsAt);
+    sound.stop(startsAt + duration);
+  }, []);
+
   useEffect(() => {
     if (state.phase !== "acting" || state.turnStartedAt === null) return;
     const startedAt = state.turnStartedAt;
     const timerSeconds = state.settings.timerSeconds;
+    const firedCueSeconds = firedCueSecondsRef.current;
+    firedCueSeconds.clear();
     const interval = window.setInterval(() => {
       const now = Date.now();
       setClockNow(now);
-      if (timerSeconds !== null && now - startedAt >= timerSeconds * 1000) {
-        dispatch({ type: "TIMEOUT", now });
+      if (timerSeconds !== null) {
+        const remainingMs = timerSeconds * 1000 - (now - startedAt);
+        const remainingSeconds = Math.ceil(remainingMs / 1000);
+        if (
+          remainingSeconds >= 1 &&
+          remainingSeconds <= 3 &&
+          soundEnabledRef.current &&
+          !firedCueSeconds.has(remainingSeconds)
+        ) {
+          firedCueSeconds.add(remainingSeconds);
+          playCountdownCue(remainingSeconds);
+        }
+        if (remainingMs <= 0) {
+          window.clearInterval(interval);
+          stopCountdownAudio();
+          dispatch({ type: "TIMEOUT", now });
+        }
       }
     }, 100);
-    return () => window.clearInterval(interval);
-  }, [state.phase, state.settings.timerSeconds, state.turnStartedAt]);
+    return () => {
+      window.clearInterval(interval);
+      firedCueSeconds.clear();
+      stopCountdownAudio();
+    };
+  }, [
+    playCountdownCue,
+    state.phase,
+    state.settings.timerSeconds,
+    state.turnStartedAt,
+    stopCountdownAudio,
+  ]);
 
   function addPlayer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -120,10 +224,17 @@ export function CharadesGame() {
   }
 
   function nextWord() {
+    const usedWordIds = state.attempts.map((attempt) => attempt.wordId);
+    if (
+      state.currentWord &&
+      !usedWordIds.includes(state.currentWord.id)
+    ) {
+      usedWordIds.push(state.currentWord.id);
+    }
     return pickNextWord(
       words,
       state.settings,
-      state.attempts.map((attempt) => attempt.wordId),
+      usedWordIds,
     );
   }
 
@@ -133,8 +244,47 @@ export function CharadesGame() {
 
   function revealWord() {
     const now = Date.now();
+    if (state.settings.timerSeconds !== null) unlockCountdownAudio();
     setClockNow(now);
     dispatch({ type: "REVEAL_WORD", now });
+  }
+
+  function markGuessed() {
+    stopCountdownAudio();
+    dispatch({ type: "MARK_GUESSED", now: Date.now() });
+  }
+
+  function passWord() {
+    const now = Date.now();
+    stopCountdownAudio();
+    if (state.settings.timerSeconds !== null) unlockCountdownAudio();
+    setClockNow(now);
+    dispatch({ type: "PASS", now, word: nextWord() });
+  }
+
+  function continueFromResult() {
+    const now = Date.now();
+    if (state.lastResult?.result === "timeout") {
+      if (state.settings.timerSeconds !== null) unlockCountdownAudio();
+      setClockNow(now);
+    }
+    dispatch({ type: "CONTINUE", now, word: nextWord() });
+  }
+
+  function endGame() {
+    stopCountdownAudio();
+    dispatch({ type: "END_GAME" });
+  }
+
+  function toggleSound() {
+    const nextEnabled = !soundEnabledRef.current;
+    soundEnabledRef.current = nextEnabled;
+    setSoundEnabled(nextEnabled);
+    if (nextEnabled) {
+      unlockCountdownAudio();
+    } else {
+      stopCountdownAudio();
+    }
   }
 
   function clearCategories() {
@@ -336,7 +486,9 @@ export function CharadesGame() {
           <GameTopBar
             attemptCount={state.attempts.length}
             onScores={() => dispatch({ type: "TOGGLE_SCOREBOARD" })}
-            onEnd={() => dispatch({ type: "END_GAME" })}
+            onEnd={endGame}
+            soundEnabled={timed ? soundEnabled : undefined}
+            onToggleSound={timed ? toggleSound : undefined}
           />
           <div className="handoff-content">
             <div className="privacy-icon" aria-hidden="true">
@@ -369,7 +521,9 @@ export function CharadesGame() {
             actor={currentActor.name}
             attemptCount={state.attempts.length}
             onScores={() => dispatch({ type: "TOGGLE_SCOREBOARD" })}
-            onEnd={() => dispatch({ type: "END_GAME" })}
+            onEnd={endGame}
+            soundEnabled={timed ? soundEnabled : undefined}
+            onToggleSound={timed ? toggleSound : undefined}
           />
           <div className="timer-wrap">
             <span className={"timer" + (timerUrgent ? " urgent" : "")}>
@@ -384,17 +538,15 @@ export function CharadesGame() {
           <div className="acting-actions">
             <button
               className="button guessed-button"
-              onClick={() =>
-                dispatch({ type: "MARK_GUESSED", now: Date.now() })
-              }
+              onClick={markGuessed}
             >
               <span aria-hidden="true">✓</span> ATSPĖJO
             </button>
             <button
               className="button pass-button"
-              onClick={() => dispatch({ type: "PASS", now: Date.now() })}
+              onClick={passWord}
             >
-              PRALEISTI
+              KITAS ŽODIS
             </button>
           </div>
         </section>
@@ -406,7 +558,9 @@ export function CharadesGame() {
             actor={currentActor.name}
             attemptCount={state.attempts.length}
             onScores={() => dispatch({ type: "TOGGLE_SCOREBOARD" })}
-            onEnd={() => dispatch({ type: "END_GAME" })}
+            onEnd={endGame}
+            soundEnabled={timed ? soundEnabled : undefined}
+            onToggleSound={timed ? toggleSound : undefined}
           />
           <div className="guesser-heading">
             <p className="eyebrow">ŽODIS ATSPĖTAS</p>
@@ -439,61 +593,68 @@ export function CharadesGame() {
       {state.phase === "result" && state.lastResult && (
         <section className="screen game-screen result-screen">
           <GameTopBar
+            actor={
+              state.lastResult.result === "timeout"
+                ? currentActor?.name
+                : undefined
+            }
             attemptCount={state.attempts.length}
             onScores={() => dispatch({ type: "TOGGLE_SCOREBOARD" })}
-            onEnd={() => dispatch({ type: "END_GAME" })}
+            onEnd={endGame}
+            soundEnabled={timed ? soundEnabled : undefined}
+            onToggleSound={timed ? toggleSound : undefined}
           />
-          <div className="result-content">
-            <div
-              className={
-                "result-mark " +
-                (state.lastResult.result === "guessed" ? "success" : "neutral")
-              }
-              aria-hidden="true"
-            >
-              {state.lastResult.result === "guessed"
-                ? "✓"
-                : state.lastResult.result === "timeout"
-                  ? "00"
-                  : "→"}
-            </div>
-            <p className="eyebrow">
-              {state.lastResult.result === "guessed"
-                ? "ATSPĖTA"
-                : state.lastResult.result === "timeout"
-                  ? "LAIKAS BAIGĖSI"
-                  : "PRALEISTA"}
-            </p>
-            <h1>
-              {state.lastResult.result === "guessed"
-                ? "Puiku!"
-                : state.lastResult.wordText}
-            </h1>
-            <p className="score-earned">
-              +{formatScore(state.lastResult.scoreAwarded)} <span>tšk.</span>
-            </p>
-            <p className="next-actor">
-              Toliau vaidina{" "}
-              <strong>
-                {
-                  state.players.find(
-                    (player) =>
-                      player.id === state.lastResult?.nextActorId,
-                  )?.name
-                }
-              </strong>
-            </p>
-          </div>
-          <footer className="game-footer">
-            <button
-              className="button button-primary button-xl"
-              onClick={() =>
-                dispatch({ type: "CONTINUE", word: nextWord() })
-              }
-            >
-              PERDUOTI TELEFONĄ <span aria-hidden="true">→</span>
-            </button>
-          </footer>
+          {state.lastResult.result === "timeout" ? (
+            <>
+              <div className="result-content timeout-content">
+                <div className="result-mark neutral" aria-hidden="true">
+                  00
+                </div>
+                <h1>LAIKAS BAIGĖSI</h1>
+              </div>
+              <footer className="game-footer">
+                <button
+                  className="button button-primary button-xl"
+                  onClick={continueFromResult}
+                >
+                  KITAS ŽODIS
+                </button>
+              </footer>
+            </>
+          ) : (
+            <>
+              <div className="result-content">
+                <div className="result-mark success" aria-hidden="true">
+                  ✓
+                </div>
+                <p className="eyebrow">ATSPĖTA</p>
+                <h1>Puiku!</h1>
+                <p className="score-earned">
+                  +{formatScore(state.lastResult.scoreAwarded)}{" "}
+                  <span>tšk.</span>
+                </p>
+                <p className="next-actor">
+                  Toliau vaidina{" "}
+                  <strong>
+                    {
+                      state.players.find(
+                        (player) =>
+                          player.id === state.lastResult?.nextActorId,
+                      )?.name
+                    }
+                  </strong>
+                </p>
+              </div>
+              <footer className="game-footer">
+                <button
+                  className="button button-primary button-xl"
+                  onClick={continueFromResult}
+                >
+                  PERDUOTI TELEFONĄ <span aria-hidden="true">→</span>
+                </button>
+              </footer>
+            </>
+          )}
         </section>
       )}
 
@@ -619,11 +780,15 @@ function GameTopBar({
   attemptCount,
   onScores,
   onEnd,
+  soundEnabled,
+  onToggleSound,
 }: {
   actor?: string;
   attemptCount: number;
   onScores: () => void;
   onEnd: () => void;
+  soundEnabled?: boolean;
+  onToggleSound?: () => void;
 }) {
   return (
     <header className="game-top-bar">
@@ -637,6 +802,16 @@ function GameTopBar({
         )}
       </div>
       <div className="game-top-actions">
+        {onToggleSound && (
+          <button
+            className="sound-toggle"
+            onClick={onToggleSound}
+            aria-label={soundEnabled ? "Išjungti garsą" : "Įjungti garsą"}
+            aria-pressed={soundEnabled}
+          >
+            <span aria-hidden="true">{soundEnabled ? "🔊" : "🔇"}</span>
+          </button>
+        )}
         <button onClick={onScores}>Taškai</button>
         <button className="end-button" onClick={onEnd}>
           Baigti
