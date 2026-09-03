@@ -1,0 +1,61 @@
+import type { Category, Difficulty } from "./game-logic";
+
+export type WordCard = {
+  id: string;
+  text: string;
+  difficulty: Exclude<Difficulty, "mixed">;
+  categories: Category[];
+};
+
+export const words: WordCard[] = [
+  { id: "w01", text: "Krepšinio kamuolys", difficulty: "easy", categories: ["lithuania", "objects"] },
+  { id: "w02", text: "Cepelinai", difficulty: "easy", categories: ["lithuania", "food"] },
+  { id: "w03", text: "Gedimino pilis", difficulty: "medium", categories: ["lithuania"] },
+  { id: "w04", text: "Gintaras", difficulty: "medium", categories: ["lithuania", "objects"] },
+  { id: "w05", text: "Dainų šventė", difficulty: "hard", categories: ["lithuania", "activities"] },
+  { id: "w06", text: "Trakai", difficulty: "easy", categories: ["lithuania"] },
+  { id: "w07", text: "Šaltibarščiai", difficulty: "easy", categories: ["lithuania", "food"] },
+  { id: "w08", text: "Joninės", difficulty: "medium", categories: ["lithuania", "activities"] },
+  { id: "w09", text: "Vienas namuose", difficulty: "easy", categories: ["movies"] },
+  { id: "w10", text: "Haris Poteris", difficulty: "easy", categories: ["movies"] },
+  { id: "w11", text: "Žvaigždžių karai", difficulty: "medium", categories: ["movies"] },
+  { id: "w12", text: "Titanikas", difficulty: "easy", categories: ["movies"] },
+  { id: "w13", text: "Liūtas karalius", difficulty: "easy", categories: ["movies", "animals"] },
+  { id: "w14", text: "Žiedų valdovas", difficulty: "medium", categories: ["movies"] },
+  { id: "w15", text: "Keisti dalykai", difficulty: "hard", categories: ["movies"] },
+  { id: "w16", text: "Šrekas", difficulty: "easy", categories: ["movies"] },
+  { id: "w17", text: "Pica", difficulty: "easy", categories: ["food"] },
+  { id: "w18", text: "Spragėsiai", difficulty: "easy", categories: ["food", "movies"] },
+  { id: "w19", text: "Sušiai", difficulty: "medium", categories: ["food"] },
+  { id: "w20", text: "Gimtadienio tortas", difficulty: "easy", categories: ["food"] },
+  { id: "w21", text: "Česnakas", difficulty: "medium", categories: ["food"] },
+  { id: "w22", text: "Kiaušinienė", difficulty: "easy", categories: ["food"] },
+  { id: "w23", text: "Aštuonkojis", difficulty: "hard", categories: ["animals", "food"] },
+  { id: "w24", text: "Pingvinas", difficulty: "easy", categories: ["animals"] },
+  { id: "w25", text: "Žirafa", difficulty: "easy", categories: ["animals"] },
+  { id: "w26", text: "Chameleonas", difficulty: "medium", categories: ["animals"] },
+  { id: "w27", text: "Kengūra", difficulty: "easy", categories: ["animals"] },
+  { id: "w28", text: "Tinginys", difficulty: "medium", categories: ["animals", "food"] },
+  { id: "w29", text: "Povandeninis laivas", difficulty: "hard", categories: ["objects"] },
+  { id: "w30", text: "Dantų šepetėlis", difficulty: "easy", categories: ["objects"] },
+  { id: "w31", text: "Skėtis", difficulty: "easy", categories: ["objects"] },
+  { id: "w32", text: "Žadintuvas", difficulty: "medium", categories: ["objects"] },
+  { id: "w33", text: "Gesintuvas", difficulty: "medium", categories: ["objects"] },
+  { id: "w34", text: "Nuotolinio valdymo pultelis", difficulty: "hard", categories: ["objects"] },
+  { id: "w35", text: "Lygintuvas", difficulty: "medium", categories: ["objects"] },
+  { id: "w36", text: "Lagaminas", difficulty: "easy", categories: ["objects"] },
+  { id: "w37", text: "Čiuožti ledu", difficulty: "easy", categories: ["activities"] },
+  { id: "w38", text: "Kepti blynus", difficulty: "easy", categories: ["activities", "food"] },
+  { id: "w39", text: "Pūsti burbulus", difficulty: "medium", categories: ["activities"] },
+  { id: "w40", text: "Ieškoti pamesto rakto", difficulty: "hard", categories: ["activities", "objects"] },
+  { id: "w41", text: "Vedžioti šunį", difficulty: "easy", categories: ["activities", "animals"] },
+  { id: "w42", text: "Fotografuoti", difficulty: "easy", categories: ["activities"] },
+  { id: "w43", text: "Statyti sniego senį", difficulty: "medium", categories: ["activities"] },
+  { id: "w44", text: "Užmigti autobuse", difficulty: "hard", categories: ["activities"] },
+  { id: "w45", text: "Plaukti prieš srovę", difficulty: "hard", categories: ["activities"] },
+  { id: "w46", text: "Groti gitara", difficulty: "easy", categories: ["activities", "objects"] },
+  { id: "w47", text: "Pakuoti dovaną", difficulty: "medium", categories: ["activities", "objects"] },
+  { id: "w48", text: "Gaudyti uodą", difficulty: "medium", categories: ["activities", "animals"] },
+  { id: "w49", text: "Vėluoti į darbą", difficulty: "hard", categories: ["activities"] },
+  { id: "w50", text: "Šokti lietuje", difficulty: "medium", categories: ["activities"] },
+];
